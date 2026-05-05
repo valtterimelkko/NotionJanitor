@@ -1,0 +1,20 @@
+[Unit]
+Description=Notion Janitor — Weekly scanner & Telegram action handler
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/root/notionjanitor
+Environment=PATH=/root/.local/bin:/usr/bin:/bin
+Environment=HOME=/root
+ExecStart=/root/notionjanitor/.venv/bin/python /root/notionjanitor/main.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=notion-janitor
+
+[Install]
+WantedBy=multi-user.target
