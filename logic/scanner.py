@@ -33,6 +33,10 @@ class WeeklyScanner:
 
         Returns a summary dict for logging / testing.
         """
+        # Clean up very old pending reviews (user never clicked) before scanning.
+        # Use a 13-day cutoff to avoid scheduling/seconds race conditions.
+        cleared = self.state.clear_stale_pending(days=13)
+
         cutoff_iso = self._calculate_cutoff()
         logger.info("Starting weekly scan — cutoff: %s", cutoff_iso)
 
@@ -40,7 +44,7 @@ class WeeklyScanner:
         stale_notes = self.notion.get_stale_notes(cutoff_iso, limit=STALE_NOTE_LIMIT)
         if not stale_notes:
             logger.info("No stale notes found. Nothing to do.")
-            return {"scanned": 0, "sent": 0, "errors": 0}
+            return {"scanned": 0, "sent": 0, "errors": 0, "cleared_stale": cleared}
 
         sent_count = 0
         error_count = 0
@@ -60,9 +64,6 @@ class WeeklyScanner:
             except Exception as exc:
                 logger.exception("Failed to process note %s: %s", note_id, exc)
                 error_count += 1
-
-        # Clean up very old pending reviews (user never clicked)
-        cleared = self.state.clear_stale_pending(days=14)
 
         summary = {
             "scanned": len(stale_notes),
