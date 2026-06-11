@@ -11,8 +11,15 @@ It replaced the earlier n8n-based Weekly Scanner + Action Taker workflows.
 
 ## Core behaviour
 
-- **Weekly Scanner**: every Monday at 09:00, find stale notes, summarise them, and send Telegram review messages
+- **Weekly Scanner**: every Monday at 09:00, run two sub-queries against the Notes database:
+  - **Pass 1 — project-linked notes**: up to `STALE_NOTE_LIMIT` (default 13) stale notes that have a Project relation, sorted oldest-first
+  - **Pass 2 — orphan notes**: up to `STALE_NOTE_LIMIT` stale notes with *no* Project relation, sorted oldest-first
+  - Results from both passes are summarised by Kimi and sent as Telegram review messages (up to `STALE_NOTE_LIMIT * 2 = 26` per week)
 - **Action Taker**: listen for Telegram button clicks via long polling, then archive the note or append a kept marker block
+
+### Why two sub-queries?
+
+A single oldest-first query silently excludes orphan notes (quick captures never linked to a project) when the project-linked backlog exceeds the cap. Separate queries guarantee orphans always appear in each weekly review.
 
 ## Stack
 

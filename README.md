@@ -18,8 +18,8 @@ Notion Janitor exists to solve that problem with a small, steady rhythm instead 
 
 Every Monday morning, Notion Janitor:
 
-- looks for notes that have not been edited recently
-- applies a cap so the weekly review stays manageable
+- looks for notes that have not been edited recently — in **two separate passes**: one for notes linked to a project, one for orphan notes with no project
+- applies a per-pass cap so the weekly review stays manageable
 - generates a short AI summary for each candidate note
 - sends the review items to a dedicated Telegram chat
 - lets you decide note by note whether to **Keep** or **Archive**
@@ -46,9 +46,16 @@ That repo focuses on AI access and editing workflows for Ultimate Brain, while N
 Current default behaviour:
 
 - notes become candidates after **60 days** without edits
-- each weekly scan is capped at **20 notes**
+- the scanner runs **two sub-queries per week**: one for project-linked notes, one for orphan notes (no Project relation)
+- each sub-query is capped at **13 notes**, giving up to **26 review messages per week** in total
 - notes are reviewed via **Telegram buttons** in a dedicated chat
 - the service is **self-hosted** and uses Telegram only as the review surface
+
+### Why two sub-queries?
+
+A single oldest-first query with a cap of 20 silently hides orphan notes whenever there are 20+ stale project-linked notes. In practice, project-linked notes tend to accumulate a larger backlog, so orphans — quick-capture notes that were never attached to a project — would never surface at all.
+
+Running separate queries guarantees that orphan notes always get a slot in every weekly review, regardless of how large the project-linked backlog grows.
 
 ### If you choose Archive
 
@@ -70,8 +77,9 @@ That version proved the concept, but over time I wanted something more inspectab
 
 ```text
 APScheduler weekly cron
-  -> query Ultimate Brain Notes database in Notion
-  -> find stale notes
+  -> query Ultimate Brain Notes database in Notion (two passes)
+       pass 1: project-linked notes  (oldest 13, sorted oldest-first)
+       pass 2: orphan notes          (oldest 13, no Project relation)
   -> summarise each note with Kimi
   -> send Telegram review message with Keep / Archive buttons
 
