@@ -32,7 +32,9 @@ TELEGRAM_CHAT_ID = _int_env("TELEGRAM_CHAT_ID", 0)
 
 # Scanner behaviour
 CUTOFF_DAYS = _int_env("CUTOFF_DAYS", 60)
-STALE_NOTE_LIMIT = _int_env("STALE_NOTE_LIMIT", 20)
+# Per-type limit: applied separately to project-linked notes and orphan notes.
+# Total weekly messages = STALE_NOTE_LIMIT * 2.
+STALE_NOTE_LIMIT = _int_env("STALE_NOTE_LIMIT", 13)
 SCHEDULE_DAY = os.environ.get("SCHEDULE_DAY", "mon")  # APScheduler day name
 SCHEDULE_HOUR = _int_env("SCHEDULE_HOUR", 9)
 SCHEDULE_MINUTE = _int_env("SCHEDULE_MINUTE", 0)

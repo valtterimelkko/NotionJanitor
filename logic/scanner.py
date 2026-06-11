@@ -31,6 +31,11 @@ class WeeklyScanner:
     async def run(self) -> dict:
         """Execute one full scan cycle.
 
+        Two separate queries run each week — one for project-linked notes and
+        one for orphan notes (no Project relation) — each capped at
+        STALE_NOTE_LIMIT. This guarantees orphans always get reviewed and are
+        never silently crowded out by the project-linked backlog.
+
         Returns a summary dict for logging / testing.
         """
         # Clean up very old pending reviews (user never clicked) before scanning.
@@ -40,16 +45,35 @@ class WeeklyScanner:
         cutoff_iso = self._calculate_cutoff()
         logger.info("Starting weekly scan — cutoff: %s", cutoff_iso)
 
-        # 1. Fetch stale notes from Notion
-        stale_notes = self.notion.get_stale_notes(cutoff_iso, limit=STALE_NOTE_LIMIT)
-        if not stale_notes:
+        # 1. Fetch stale notes — project-linked and orphans as separate queries
+        linked_notes = self.notion.get_stale_notes(
+            cutoff_iso, limit=STALE_NOTE_LIMIT, orphans_only=False
+        )
+        orphan_notes = self.notion.get_stale_notes(
+            cutoff_iso, limit=STALE_NOTE_LIMIT, orphans_only=True
+        )
+        all_notes = linked_notes + orphan_notes
+
+        if not all_notes:
             logger.info("No stale notes found. Nothing to do.")
-            return {"scanned": 0, "sent": 0, "errors": 0, "cleared_stale": cleared}
+            return {
+                "scanned": 0,
+                "scanned_linked": 0,
+                "scanned_orphans": 0,
+                "sent": 0,
+                "errors": 0,
+                "cleared_stale": cleared,
+            }
+
+        logger.info(
+            "Candidates: %d linked + %d orphans = %d total",
+            len(linked_notes), len(orphan_notes), len(all_notes),
+        )
 
         sent_count = 0
         error_count = 0
 
-        for note in stale_notes:
+        for note in all_notes:
             note_id = note["id"]
 
             # Skip if already pending review (prevents duplicates within the same week)
@@ -66,7 +90,9 @@ class WeeklyScanner:
                 error_count += 1
 
         summary = {
-            "scanned": len(stale_notes),
+            "scanned": len(all_notes),
+            "scanned_linked": len(linked_notes),
+            "scanned_orphans": len(orphan_notes),
             "sent": sent_count,
             "errors": error_count,
             "cleared_stale": cleared,
@@ -80,12 +106,12 @@ class WeeklyScanner:
         Returns True if a message was actually sent, False in dry-run mode.
         """
         note_id = note["id"]
-        title = (
+        title_parts = (
             note.get("properties", {})
             .get("Name", {})
-            .get("title", [{}])[0]
-            .get("plain_text", "Untitled")
+            .get("title", [])
         )
+        title = title_parts[0].get("plain_text", "Untitled") if title_parts else "Untitled"
 
         # Get project name (mirrors n8n "Get Project" node)
         project = self.notion.get_project_name(note)

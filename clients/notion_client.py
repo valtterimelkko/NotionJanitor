@@ -26,40 +26,47 @@ class NotionClient:
     # ------------------------------------------------------------------
     # Database queries
     # ------------------------------------------------------------------
-    def get_stale_notes(self, cutoff_iso: str, limit: int = 20) -> list[dict]:
+    def get_stale_notes(
+        self,
+        cutoff_iso: str,
+        limit: int = 13,
+        orphans_only: bool | None = None,
+    ) -> list[dict]:
         """Query the Notes database for notes not edited since *cutoff_iso*.
 
-        Mirrors the n8n "Get Stale Notes" node filter:
-            - Archived checkbox != true
-            - last_edited_time < cutoffDate
-            - sorted oldest first
+        orphans_only controls project filtering:
+            None  — no project filter (all stale notes)
+            True  — only notes WITHOUT a Project relation (orphans)
+            False — only notes WITH a Project relation
         """
         url = f"{NOTION_API_BASE}/databases/{NOTION_DATABASE_ID}/query"
-        payload = {
-            "filter": {
-                "and": [
-                    {
-                        "property": "Archived",
-                        "checkbox": {"does_not_equal": True},
-                    },
-                    {
-                        "timestamp": "last_edited_time",
-                        "last_edited_time": {"before": cutoff_iso},
-                    },
-                ]
+        filters: list[dict] = [
+            {
+                "property": "Archived",
+                "checkbox": {"does_not_equal": True},
             },
-            "sorts": [
-                {
-                    "timestamp": "last_edited_time",
-                    "direction": "ascending",
-                }
-            ],
+            {
+                "timestamp": "last_edited_time",
+                "last_edited_time": {"before": cutoff_iso},
+            },
+        ]
+        if orphans_only is True:
+            filters.append({"property": "Project", "relation": {"is_empty": True}})
+        elif orphans_only is False:
+            filters.append({"property": "Project", "relation": {"is_not_empty": True}})
+
+        payload = {
+            "filter": {"and": filters},
+            "sorts": [{"timestamp": "last_edited_time", "direction": "ascending"}],
             "page_size": limit,
         }
         resp = self.session.post(url, json=payload)
         resp.raise_for_status()
         results = resp.json().get("results", [])
-        logger.info("Found %d stale notes (limit %d)", len(results), limit)
+        logger.info(
+            "Found %d stale notes (limit %d, orphans_only=%s)",
+            len(results), limit, orphans_only,
+        )
         return results
 
     # ------------------------------------------------------------------
