@@ -43,6 +43,10 @@ def setup_logging(log_to_file: bool = True) -> None:
         handlers=handlers,
     )
 
+    # Avoid vendor HTTP request logs leaking sensitive URLs/tokens into journals.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+
 
 # ------------------------------------------------------------------
 # Telegram callback handler
