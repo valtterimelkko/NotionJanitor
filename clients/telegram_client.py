@@ -15,8 +15,15 @@ class TelegramClient:
     """Wraps python-telegram-bot to replicate the n8n Telegram nodes."""
 
     def __init__(self):
-        self.app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+        self.token = TELEGRAM_BOT_TOKEN
         self.chat_id = TELEGRAM_CHAT_ID
+        self._app: Application | None = None
+
+    @property
+    def app(self) -> Application:
+        if self._app is None:
+            self._app = Application.builder().token(self.token).build()
+        return self._app
 
     # ------------------------------------------------------------------
     # Review message (was Workflow 1 "Send a text message")

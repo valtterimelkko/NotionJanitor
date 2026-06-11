@@ -9,6 +9,7 @@ Group=root
 WorkingDirectory=/root/notionjanitor
 Environment=PATH=/root/.local/bin:/usr/bin:/bin
 Environment=HOME=/root
+EnvironmentFile=/root/notionjanitor/.env
 ExecStart=/root/notionjanitor/.venv/bin/python /root/notionjanitor/main.py
 Restart=always
 RestartSec=10
