@@ -54,6 +54,16 @@ The app keeps a small SQLite state DB locally to track:
 
 This prevents duplicate sends within the same review window and records whether a note was kept or archived.
 
+## Observability & health checks
+
+Full guide: [`OBSERVABILITY.md`](OBSERVABILITY.md). Quick reference for operators:
+
+- **Logs:** journald is the primary sink (`journalctl -u notion-janitor`); there is also a **rotated** file at `/var/log/notion-janitor.log` (rolls at 5 MiB, keeps 5 backups).
+- **Per-scan summary:** every run logs `Weekly scan complete: {scanned, scanned_linked, scanned_orphans, sent, errors, cleared_stale}`. `sent: 0` with `errors > 0` means an upstream outage; `sent: 0` with `errors: 0` is benign.
+- **Run history:** the `scan_runs` table in `data/janitor.db` records every run's outcome. `StateStore().last_successful_scan()` returns the last non-dry run that sent messages — also printed at every startup ("Last successful scan: …").
+- **Failure alert:** a total failure (`sent == 0` and `errors > 0`) posts a ⚠️ message to the Telegram chat. This is what turns a silent outage into a loud one.
+- **API errors:** Kimi/Notion non-2xx responses are logged in full (grep `API error`), including the upstream message that explains the failure.
+
 ## Service shape
 
 The original self-hosted deployment used the example unit in:

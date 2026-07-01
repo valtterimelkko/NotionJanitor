@@ -67,6 +67,17 @@ Notion Janitor appends a small “kept via Telegram review” block to the note.
 
 That matters because it updates the note's `last_edited_time`, which means the same note will not immediately reappear in the next weekly review cycle. In practice, this creates a gentle snooze/reset behaviour while still leaving a visible record that the note was intentionally kept.
 
+## Reliability & observability
+
+A broken scan and an empty week look identical from Telegram — no messages either way — so the janitor has a few guards to make sure outages don't go unnoticed:
+
+- **Scan-failure alert** — if a scan finds candidate notes but sends zero messages (every note errored), it posts a ⚠️ notice to the review chat pointing at the logs.
+- **Run history** — every scan's outcome (scanned / sent / errors / duration) is recorded in a local `scan_runs` table, queryable as a trend rather than by grepping logs.
+- **Self-diagnosing API errors** — upstream error responses from Kimi and Notion are logged in full, so the reason for a failure is right there in the logs.
+- **Rotated logs** — the log file is capped and rotated so it stays searchable over time.
+
+See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) for the full operational guide and a diagnostic playbook.
+
 ## Why this started in n8n and moved to code
 
 This workflow originally existed as n8n automation.
@@ -94,11 +105,13 @@ Telegram callback polling
 ```text
 clients/     Notion, Telegram, and Kimi API clients
 logic/       Weekly scanner and action handler
-tests/       Unit tests for scanner, state, and callbacks
+tests/       Unit tests for scanner, state, clients, and logging
 systemd/     Example service file
 config.py    Runtime configuration
 main.py      Scheduler + Telegram polling entrypoint
-state.py     Local SQLite state tracking
+state.py     Local SQLite state tracking + scan-run history
+docs/        Maintainer runbook and observability guide
+pyproject.toml   Lint config (ruff)
 ```
 
 ## Quick start
@@ -133,6 +146,7 @@ python3 -m pytest -q
 
 ## Documentation map
 
+- [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) — where logs live, the `scan_runs` history table, the scan-failure alert, and a diagnostic playbook for "the janitor went silent"
 - [`docs/MAINTAINER-RUNBOOK.md`](docs/MAINTAINER-RUNBOOK.md) — maintainer-oriented operational notes preserved from the original private README
 - [`systemd/notion-janitor.service`](systemd/notion-janitor.service) — example service unit (loads `/root/notionjanitor/.env` in the original self-hosted setup)
 
