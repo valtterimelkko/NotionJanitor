@@ -1,7 +1,6 @@
 """Telegram client for sending review messages and editing confirmations."""
 
 import logging
-from datetime import datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application
@@ -64,6 +63,24 @@ class TelegramClient:
             reply_markup=keyboard,
         )
         logger.info("Sent review message for note %s (msg_id=%s)", note_id, message.message_id)
+        return message.message_id
+
+    # ------------------------------------------------------------------
+    # Admin / alert messages
+    # ------------------------------------------------------------------
+    async def send_alert(self, text: str) -> int:
+        """Send a plain (no-button) admin message to the review chat.
+
+        Used to surface scan-level problems that would otherwise be invisible
+        to the user — e.g. every candidate note failed to summarise, so no
+        review messages were sent at all.
+        """
+        message = await self.app.bot.send_message(
+            chat_id=self.chat_id,
+            text=text,
+            parse_mode="HTML",
+        )
+        logger.info("Sent alert message (msg_id=%s)", message.message_id)
         return message.message_id
 
     # ------------------------------------------------------------------

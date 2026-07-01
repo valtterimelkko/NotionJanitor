@@ -36,18 +36,37 @@ class KimiClient:
             "If content is empty or unreadable, say 'No content found'."
         )
 
+        # Kimi's coding models reject any temperature other than 1 with
+        # HTTP 400 ("invalid temperature: only 1 is allowed for this model"),
+        # which silently breaks the entire weekly scan. Force it to 1 and warn
+        # if the configured value disagrees, so a config slip can't regress.
+        if KIMI_TEMPERATURE != 1:
+            logger.warning(
+                "KIMI_TEMPERATURE=%s is not supported by Kimi (only 1 allowed); forcing 1.",
+                KIMI_TEMPERATURE,
+            )
+
         payload = {
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": user_prompt},
             ],
             "model": KIMI_MODEL,
-            "temperature": KIMI_TEMPERATURE,
+            "temperature": 1,
             "max_tokens": KIMI_MAX_TOKENS,
         }
 
         logger.debug("Kimi request payload: %s", json.dumps(payload)[:500])
         resp = self.session.post(KIMI_API_URL, json=payload, timeout=60)
+        if not resp.ok:
+            # Log the upstream error body before raising. raise_for_status() alone
+            # discards this, which previously made outages (e.g. the temperature
+            # regression) invisible — the diagnosis lives in this body.
+            logger.error(
+                "Kimi API error %s during summarise_note: %s",
+                resp.status_code,
+                resp.text[:1000],
+            )
         resp.raise_for_status()
         data = resp.json()
 

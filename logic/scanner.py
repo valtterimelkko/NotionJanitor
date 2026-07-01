@@ -1,6 +1,5 @@
 """Weekly Scanner logic — replaces n8n Workflow 1."""
 
-import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -41,6 +40,9 @@ class WeeklyScanner:
         # Clean up very old pending reviews (user never clicked) before scanning.
         # Use a 13-day cutoff to avoid scheduling/seconds race conditions.
         cleared = self.state.clear_stale_pending(days=13)
+
+        started_at_dt = datetime.now(timezone.utc)
+        started_at = started_at_dt.isoformat()
 
         cutoff_iso = self._calculate_cutoff()
         logger.info("Starting weekly scan — cutoff: %s", cutoff_iso)
@@ -98,7 +100,51 @@ class WeeklyScanner:
             "cleared_stale": cleared,
         }
         logger.info("Weekly scan complete: %s", summary)
+
+        # Persist this run's outcome for trend/health analysis. Recorded before
+        # the alert so last_successful_scan() correctly excludes this failed run.
+        duration_s = (datetime.now(timezone.utc) - started_at_dt).total_seconds()
+        self.state.record_scan_run(summary, started_at, duration_s, dry_run=self.dry_run)
+
+        # Surface a total failure to the user. Without this, an upstream outage
+        # (e.g. the summariser rejecting every note, as happened with the Kimi
+        # temperature regression) is indistinguishable from "nothing to review"
+        # — the janitor simply goes silent.
+        if not self.dry_run and sent_count == 0 and error_count > 0:
+            await self._alert_scan_failure(len(all_notes), error_count)
+
         return summary
+
+    async def _alert_scan_failure(self, total: int, errors: int) -> None:
+        """Best-effort Telegram ping when a scan sends nothing despite candidates.
+
+        Never raises — a failure to deliver the alert must not break the scan
+        or the scheduler job that called it.
+        """
+        try:
+            last = self.state.last_successful_scan()
+        except Exception:
+            last = None
+        if last:
+            last_line = (
+                f"\n\nLast successful scan: {last['finished_at']} "
+                f"({last['sent']} messages sent)."
+            )
+        else:
+            last_line = "\n\nNo successful scan has been recorded yet."
+
+        text = (
+            "⚠️ <b>Notion Janitor — scan problem</b>\n\n"
+            f"Today's scan found {total} stale note(s) but sent <b>0</b> review "
+            f"messages ({errors} failed to process).{last_line}\n\n"
+            "This usually means an upstream API (Kimi/Notion) or a config value "
+            "is rejecting requests. The scheduler itself is fine — check the "
+            "service logs: journalctl -u notion-janitor"
+        )
+        try:
+            await self.telegram.send_alert(text)
+        except Exception as exc:
+            logger.error("Failed to send scan-failure alert: %s", exc)
 
     async def _process_one_note(self, note: dict) -> bool:
         """Summarise a single note and send the Telegram review message.

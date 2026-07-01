@@ -1,7 +1,6 @@
 """Notion API client for Ultimate Brain (Second Brain) operations."""
 
 import logging
-from typing import Any, Optional
 
 import requests
 
@@ -22,6 +21,23 @@ class NotionClient:
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
+
+    @staticmethod
+    def _check(resp, context: str) -> None:
+        """Raise for HTTP errors, but log the upstream body first.
+
+        raise_for_status() alone discards the response body, which is where
+        Notion puts the diagnostic (e.g. validation_error details). Logging it
+        here makes outages self-diagnosing in the logs.
+        """
+        if not resp.ok:
+            logger.error(
+                "Notion API error %s during %s: %s",
+                resp.status_code,
+                context,
+                resp.text[:1000],
+            )
+        resp.raise_for_status()
 
     # ------------------------------------------------------------------
     # Database queries
@@ -61,7 +77,7 @@ class NotionClient:
             "page_size": limit,
         }
         resp = self.session.post(url, json=payload)
-        resp.raise_for_status()
+        self._check(resp, "get_stale_notes")
         results = resp.json().get("results", [])
         logger.info(
             "Found %d stale notes (limit %d, orphans_only=%s)",
@@ -76,7 +92,7 @@ class NotionClient:
         """Fetch a single page (used to resolve project relation)."""
         url = f"{NOTION_API_BASE}/pages/{page_id}"
         resp = self.session.get(url)
-        resp.raise_for_status()
+        self._check(resp, "get_page")
         return resp.json()
 
     def get_project_name(self, note: dict) -> str:
@@ -109,7 +125,7 @@ class NotionClient:
         has_more = True
         while has_more:
             resp = self.session.get(url)
-            resp.raise_for_status()
+            self._check(resp, "get_block_children")
             data = resp.json()
             for block in data.get("results", []):
                 blocks.append(block)
@@ -149,7 +165,7 @@ class NotionClient:
             }
         }
         resp = self.session.patch(url, json=payload)
-        resp.raise_for_status()
+        self._check(resp, "archive_note")
         logger.info("Archived note %s", page_id)
 
     def append_kept_block(self, page_id: str) -> None:
@@ -181,5 +197,5 @@ class NotionClient:
             ]
         }
         resp = self.session.patch(url, json=payload)
-        resp.raise_for_status()
+        self._check(resp, "append_kept_block")
         logger.info("Appended 'kept' block to note %s", page_id)

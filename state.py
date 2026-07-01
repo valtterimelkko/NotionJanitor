@@ -27,6 +27,20 @@ CREATE TABLE IF NOT EXISTS processed_notes (
     action       TEXT NOT NULL,  -- 'archived' | 'kept'
     processed_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS scan_runs (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at      TEXT NOT NULL,
+    finished_at     TEXT NOT NULL,
+    duration_s      REAL,
+    scanned         INTEGER DEFAULT 0,
+    scanned_linked  INTEGER DEFAULT 0,
+    scanned_orphans INTEGER DEFAULT 0,
+    sent            INTEGER DEFAULT 0,
+    errors          INTEGER DEFAULT 0,
+    cleared_stale   INTEGER DEFAULT 0,
+    dry_run         INTEGER DEFAULT 0  -- 1 if the run was a --dry-run
+);
 """
 
 
@@ -133,3 +147,57 @@ class StateStore:
                 (note_id, action, datetime.now(timezone.utc).isoformat()),
             )
         logger.info("Recorded note %s as %s", note_id, action)
+
+    # ------------------------------------------------------------------
+    # Scan run history (observability)
+    # ------------------------------------------------------------------
+    def record_scan_run(
+        self,
+        summary: dict,
+        started_at: str,
+        duration_s: float,
+        dry_run: bool = False,
+    ) -> None:
+        """Persist the outcome of one scan cycle for trend/health analysis."""
+        finished_at = datetime.now(timezone.utc).isoformat()
+        with self._conn() as conn:
+            conn.execute(
+                """
+                INSERT INTO scan_runs
+                    (started_at, finished_at, duration_s, scanned, scanned_linked,
+                     scanned_orphans, sent, errors, cleared_stale, dry_run)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    started_at,
+                    finished_at,
+                    duration_s,
+                    summary.get("scanned", 0),
+                    summary.get("scanned_linked", 0),
+                    summary.get("scanned_orphans", 0),
+                    summary.get("sent", 0),
+                    summary.get("errors", 0),
+                    summary.get("cleared_stale", 0),
+                    int(dry_run),
+                ),
+            )
+        logger.info("Recorded scan run: %s", summary)
+
+    def last_successful_scan(self) -> Optional[dict]:
+        """Most recent non-dry run that actually sent review messages.
+
+        Returns None if no successful run has been recorded. Used as a health
+        signal: if this is stale (or None) while scans keep running, something
+        upstream is rejecting every note.
+        """
+        with self._conn() as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute(
+                """
+                SELECT * FROM scan_runs
+                WHERE sent > 0 AND dry_run = 0
+                ORDER BY finished_at DESC, id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            return dict(row) if row else None

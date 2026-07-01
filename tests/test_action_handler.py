@@ -1,6 +1,5 @@
 """Unit tests for ActionHandler callback parsing."""
 
-import pytest
 
 from logic.action_handler import ActionHandler
 

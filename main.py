@@ -8,6 +8,7 @@ Starts two things concurrently:
 import argparse
 import asyncio
 import logging
+from logging.handlers import RotatingFileHandler
 import sys
 from pathlib import Path
 
@@ -22,6 +23,7 @@ from telegram.ext import (
 from config import SCHEDULE_DAY, SCHEDULE_HOUR, SCHEDULE_MINUTE, TELEGRAM_BOT_TOKEN
 from logic.action_handler import ActionHandler
 from logic.scanner import WeeklyScanner
+from state import StateStore
 
 # ------------------------------------------------------------------
 # Logging setup
@@ -29,18 +31,27 @@ from logic.scanner import WeeklyScanner
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
 
-def setup_logging(log_to_file: bool = True) -> None:
+def setup_logging(log_to_file: bool = True, log_file: str | Path | None = None) -> None:
     handlers = [logging.StreamHandler(sys.stdout)]
     if log_to_file:
         from config import LOG_FILE
 
-        LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(LOG_FILE))
+        path = Path(log_file) if log_file else LOG_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(
+            RotatingFileHandler(
+                path,
+                maxBytes=5 * 1024 * 1024,  # 5 MiB per file before rolling over
+                backupCount=5,
+                encoding="utf-8",
+            )
+        )
 
     logging.basicConfig(
         level=logging.INFO,
         format=LOG_FORMAT,
         handlers=handlers,
+        force=True,
     )
 
     # Avoid vendor HTTP request logs leaking sensitive URLs/tokens into journals.
@@ -107,6 +118,16 @@ async def main() -> None:
     setup_logging()
     logger = logging.getLogger(__name__)
     logger.info("Starting Notion Janitor — dry_run=%s", args.dry_run)
+
+    # Health signal at startup: when did we last successfully send review messages?
+    try:
+        last = StateStore().last_successful_scan()
+        logger.info(
+            "Last successful scan: %s",
+            f"{last['finished_at']} ({last['sent']} sent)" if last else "none recorded yet",
+        )
+    except Exception as exc:
+        logger.warning("Could not read last successful scan: %s", exc)
 
     if args.run_once:
         await run_scanner(dry_run=args.dry_run)
