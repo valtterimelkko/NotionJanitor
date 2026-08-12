@@ -14,7 +14,7 @@ It replaced the earlier n8n-based Weekly Scanner + Action Taker workflows.
 - **Weekly Scanner**: every Monday at 09:00, run two sub-queries against the Notes database:
   - **Pass 1 — project-linked notes**: up to `STALE_NOTE_LIMIT` (default 13) stale notes that have a Project relation, sorted oldest-first
   - **Pass 2 — orphan notes**: up to `STALE_NOTE_LIMIT` stale notes with *no* Project relation, sorted oldest-first
-  - Results from both passes are summarised by Kimi and sent as Telegram review messages (up to `STALE_NOTE_LIMIT * 2 = 26` per week)
+  - Results from both passes are summarised by GPT-5.6 Luna through the Pi Web UI Internal API and sent as Telegram review messages (up to `STALE_NOTE_LIMIT * 2 = 26` per week)
 - **Action Taker**: listen for Telegram button clicks via long polling, then archive the note or append a kept marker block
 
 ### Why two sub-queries?
@@ -25,7 +25,8 @@ A single oldest-first query silently excludes orphan notes (quick captures never
 
 - Python 3.12
 - `python-telegram-bot`
-- `requests`
+- `requests` (Notion/Telegram HTTP)
+- `httpx` (async Pi Web UI Internal API over Unix socket)
 - `apscheduler`
 - `sqlite3`
 - `systemd`
@@ -62,13 +63,13 @@ Full guide: [`OBSERVABILITY.md`](OBSERVABILITY.md). Quick reference for operator
 - **Per-scan summary:** every run logs `Weekly scan complete: {scanned, scanned_linked, scanned_orphans, sent, errors, cleared_stale}`. `sent: 0` with `errors > 0` means an upstream outage; `sent: 0` with `errors: 0` is benign.
 - **Run history:** the `scan_runs` table in `data/janitor.db` records every run's outcome. `StateStore().last_successful_scan()` returns the last non-dry run that sent messages — also printed at every startup ("Last successful scan: …").
 - **Failure alert:** a total failure (`sent == 0` and `errors > 0`) posts a ⚠️ message to the Telegram chat. This is what turns a silent outage into a loud one.
-- **API errors:** Kimi/Notion non-2xx responses are logged in full (grep `API error`), including the upstream message that explains the failure.
+- **API errors:** Pi Web UI/Notion failures are logged with their HTTP status and diagnostic code. Check `Pi Web UI Internal API` or `Notion API error` log entries.
 
 ## Service shape
 
 The original self-hosted deployment used the example unit in:
 
-- `systemd/notion-janitor.service`
+- `systemd/notion-janitor.service` (ordered after `pi-web-ui.service`)
 
 That unit expects local secrets/config in:
 

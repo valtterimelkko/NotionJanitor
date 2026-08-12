@@ -95,7 +95,10 @@ async def on_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def run_scanner(dry_run: bool = False) -> None:
     """APScheduler job wrapper."""
     scanner = WeeklyScanner(dry_run=dry_run)
-    await scanner.run()
+    try:
+        await scanner.run()
+    finally:
+        await scanner.close()
 
 
 # ------------------------------------------------------------------

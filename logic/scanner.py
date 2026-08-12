@@ -3,7 +3,7 @@
 import logging
 from datetime import datetime, timezone, timedelta
 
-from clients.kimi_client import KimiClient
+from clients.pi_summariser import PiInternalApiSummariser
 from clients.notion_client import NotionClient
 from clients.telegram_client import TelegramClient
 from config import CUTOFF_DAYS, STALE_NOTE_LIMIT
@@ -17,7 +17,7 @@ class WeeklyScanner:
 
     def __init__(self, dry_run: bool = False):
         self.notion = NotionClient()
-        self.kimi = KimiClient()
+        self.summariser = PiInternalApiSummariser()
         self.telegram = TelegramClient()
         self.state = StateStore()
         self.dry_run = dry_run
@@ -26,6 +26,10 @@ class WeeklyScanner:
         """Return ISO8601 timestamp for *cutoff* days ago (UTC)."""
         cutoff = datetime.now(timezone.utc) - timedelta(days=CUTOFF_DAYS)
         return cutoff.isoformat().replace("+00:00", "Z")
+
+    async def close(self) -> None:
+        """Close the reusable Internal API transport owned by this scan."""
+        await self.summariser.aclose()
 
     async def run(self) -> dict:
         """Execute one full scan cycle.
@@ -107,8 +111,8 @@ class WeeklyScanner:
         self.state.record_scan_run(summary, started_at, duration_s, dry_run=self.dry_run)
 
         # Surface a total failure to the user. Without this, an upstream outage
-        # (e.g. the summariser rejecting every note, as happened with the Kimi
-        # temperature regression) is indistinguishable from "nothing to review"
+        # (e.g. the summariser rejecting every note) is indistinguishable from
+        # "nothing to review"
         # — the janitor simply goes silent.
         if not self.dry_run and sent_count == 0 and error_count > 0:
             await self._alert_scan_failure(len(all_notes), error_count)
@@ -137,7 +141,7 @@ class WeeklyScanner:
             "⚠️ <b>Notion Janitor — scan problem</b>\n\n"
             f"Today's scan found {total} stale note(s) but sent <b>0</b> review "
             f"messages ({errors} failed to process).{last_line}\n\n"
-            "This usually means an upstream API (Kimi/Notion) or a config value "
+            "This usually means Pi Web UI, Notion, or a config value "
             "is rejecting requests. The scheduler itself is fine — check the "
             "service logs: journalctl -u notion-janitor"
         )
@@ -173,8 +177,8 @@ class WeeklyScanner:
             )
             return False
 
-        # Generate summary via Kimi (mirrors n8n "Message a model")
-        summary = self.kimi.summarise_note(title, content_text)
+        # Generate summary through the Pi Web UI Internal API.
+        summary = await self.summariser.summarise_note(title, content_text)
 
         # Send Telegram review message (mirrors n8n "Send a text message")
         message_id = await self.telegram.send_review_message(

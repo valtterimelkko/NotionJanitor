@@ -14,17 +14,44 @@ def _int_env(name: str, default: int) -> int:
     return int(raw) if raw is not None and raw != "" else default
 
 
+def _float_env(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    return float(raw) if raw is not None and raw != "" else default
+
+
+def _path_env(name: str, default: str) -> Path:
+    return Path(os.environ.get(name, default)).expanduser()
+
+
 # Notion
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
 NOTION_API_BASE = "https://api.notion.com/v1"
 
-# Kimi API
-KIMI_API_URL = "https://api.kimi.com/coding/v1/chat/completions"
-KIMI_API_KEY = os.environ.get("KIMI_API_KEY", "")
-KIMI_MODEL = os.environ.get("KIMI_MODEL", "kimi-k2.5-thinking")
-KIMI_TEMPERATURE = float(os.environ.get("KIMI_TEMPERATURE", "0.7"))
-KIMI_MAX_TOKENS = _int_env("KIMI_MAX_TOKENS", 500)
+# Pi Web UI Internal API summarisation
+# The model and thinking level are deliberately fixed in the client and checked
+# against the live catalogue so this process cannot silently switch provider.
+PI_INTERNAL_API_SOCKET_PATH = _path_env(
+    "PI_INTERNAL_API_SOCKET_PATH", "~/.pi-web-ui/internal-api.sock"
+)
+PI_INTERNAL_API_TOKEN_PATH = _path_env(
+    "PI_INTERNAL_API_TOKEN_PATH", "~/.pi-web-ui/internal-api-token"
+)
+PI_SUMMARISER_CWD = _path_env(
+    "PI_SUMMARISER_CWD", str(BASE_DIR / ".runtime" / "summariser")
+)
+PI_INTERNAL_API_REQUEST_TIMEOUT_SECONDS = _float_env(
+    "PI_INTERNAL_API_REQUEST_TIMEOUT_SECONDS", 30.0
+)
+PI_INTERNAL_API_MAX_WAIT_SECONDS = _float_env(
+    "PI_INTERNAL_API_MAX_WAIT_SECONDS", 300.0
+)
+PI_INTERNAL_API_POLL_INTERVAL_SECONDS = _float_env(
+    "PI_INTERNAL_API_POLL_INTERVAL_SECONDS", 1.0
+)
+PI_SUMMARISER_MAX_CONTENT_CHARS = _int_env(
+    "PI_SUMMARISER_MAX_CONTENT_CHARS", 120_000
+)
 
 # Telegram
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")

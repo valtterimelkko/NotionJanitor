@@ -32,7 +32,8 @@ There are two parallel sinks, both written from the same root logger:
    ```
 
 Vendor HTTP libraries (`httpx`, `httpcore`) are pinned to `WARNING` so tokens
-and request URLs never leak into either sink.
+and request URLs never leak into either sink. Pi Web UI request bodies are never
+logged by Notion Janitor.
 
 ---
 
@@ -105,7 +106,7 @@ sends a no-button admin message to the same Telegram chat:
 > Today's scan found 22 stale note(s) but sent **0** review messages (22 failed
 > to process).
 > Last successful scan: 2026-06-15T09:00:40Z (26 messages sent).
-> This usually means an upstream API (Kimi/Notion) or a config value is rejecting
+> This usually means Pi Web UI, Notion, or a config value is rejecting
 > requests. The scheduler itself is fine — check the service logs:
 > `journalctl -u notion-janitor`
 
@@ -116,18 +117,19 @@ to send the alert is logged and never raised, so it cannot break the scan.
 
 ## Upstream API errors now self-diagnose
 
-Both API clients log the **response body** before raising on a non-2xx (a small
-`_check` helper in `notion_client.py`, and an inline check in `kimi_client.py`).
-The body is where the upstream puts the actual reason:
+The summariser records Pi Web UI failures with the HTTP status and stable
+Internal API error code. The response body is intentionally not logged wholesale
+because it can contain runtime output. Notion response bodies continue to be
+logged by the Notion client's bounded API-error helper:
 
 ```
-Kimi API error 400 during summarise_note: {"error":{"message":"invalid temperature: only 1 is allowed for this model","type":"invalid_request_error"}}
-Notion API error 404 during get_stale_notes: {"object":"error","status":404,"code":"object_not_found","message":"Could not find database..."}}
+Pi Web UI Internal API POST /api/v1/sessions/.../prompt failed with HTTP 403 (PROVIDER_NOT_ALLOWED): ...
+Notion API error 404 during get_stale_notes: {"object":"error","status":404,"code":"object_not_found","message":"Could not find database..."}
 ```
 
-Historically these bodies were discarded by `raise_for_status()`, which is why the
-Kimi temperature regression ran undiagnosed for weeks. Grep for `API error` to find
-them fast.
+For a Pi run that was accepted but failed later, use the run id in the error and
+inspect the Pi Web UI evidence endpoints or service journal. The scanner's
+failure alert still fires when every candidate fails.
 
 ---
 
@@ -137,13 +139,18 @@ them fast.
    — you should see one line per Monday. If none, the service is not running
    (`systemctl status notion-janitor`).
 2. **Are scans erroring?** Look at recent `scan_runs` (`errors > 0`) or
-   `grep -E "ERROR|API error"` in the logs. The `API error …` line gives the
-   upstream reason directly.
+   `grep -E "ERROR|Internal API|API error"` in the logs. Pi Web UI error codes
+   distinguish unavailable capacity, blocked providers, and runtime failures.
 3. **When did it last actually work?** `last_successful_scan()` / the startup log
    line. A long gap with runs present = chronic upstream failure.
 4. **Did the alert fire?** If `sent==0 && errors>0` and you got no Telegram alert,
    Telegram itself may be unreachable (check for `Bad Gateway` polling errors in
    the log).
+5. **Is Pi Web UI ready?** Check `systemctl status pi-web-ui` and confirm the
+   owner-only socket/token paths configured by `PI_INTERNAL_API_SOCKET_PATH` and
+   `PI_INTERNAL_API_TOKEN_PATH` exist. The required model is
+   `openai-codex/gpt-5.6-luna` with `medium` thinking; the summariser fails closed
+   rather than selecting another provider.
 
 ---
 

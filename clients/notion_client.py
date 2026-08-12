@@ -142,7 +142,7 @@ class NotionClient:
         return blocks
 
     def flatten_blocks_text(self, blocks: list[dict]) -> str:
-        """Convert block objects into a simple text string for the Kimi prompt."""
+        """Convert block objects into a simple text string for the summariser prompt."""
         texts = []
         for b in blocks:
             btype = b.get("type", "")

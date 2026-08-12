@@ -1,6 +1,7 @@
 [Unit]
 Description=Notion Janitor — Weekly scanner & Telegram action handler
-After=network.target
+After=network.target pi-web-ui.service
+Wants=pi-web-ui.service
 
 [Service]
 Type=simple
@@ -16,6 +17,7 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=notion-janitor
+UMask=0077
 
 [Install]
 WantedBy=multi-user.target

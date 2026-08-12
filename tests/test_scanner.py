@@ -1,6 +1,7 @@
 """Unit tests for WeeklyScanner helpers."""
 
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock
 
 from logic.scanner import WeeklyScanner
 
@@ -40,7 +41,12 @@ class TestDryRun:
         )
         mocker.patch.object(scanner.notion, "get_project_name", return_value="TestProj")
         mocker.patch.object(scanner.notion, "get_block_children", return_value=[])
-        mocker.patch.object(scanner.kimi, "summarise_note", return_value="A test summary")
+        mocker.patch.object(
+            scanner.summariser,
+            "summarise_note",
+            new_callable=AsyncMock,
+            return_value="A test summary",
+        )
         mocker.patch.object(scanner.telegram, "send_review_message", return_value=42)
         mocker.patch.object(scanner.state, "record_scan_run")
 
@@ -67,7 +73,12 @@ class TestDryRun:
         )
         mocker.patch.object(scanner.notion, "get_project_name", return_value="No Project")
         mocker.patch.object(scanner.notion, "get_block_children", return_value=[])
-        mocker.patch.object(scanner.kimi, "summarise_note", return_value="summary")
+        mocker.patch.object(
+            scanner.summariser,
+            "summarise_note",
+            new_callable=AsyncMock,
+            return_value="summary",
+        )
         mocker.patch.object(scanner.telegram, "send_review_message", return_value=99)
         mocker.patch.object(scanner.state, "record_scan_run")
 
@@ -93,7 +104,7 @@ class TestScanFailureAlert:
             },
         }
 
-    def _wire(self, scanner, mocker, *, kimi_raises=False):
+    def _wire(self, scanner, mocker, *, summariser_raises=False):
         """Mock all external dependencies and isolate the state DB.
 
         Returns (send_alert_mock, record_run_mock) so tests can assert on both.
@@ -105,12 +116,20 @@ class TestScanFailureAlert:
         )
         mocker.patch.object(scanner.notion, "get_project_name", return_value="No Project")
         mocker.patch.object(scanner.notion, "get_block_children", return_value=[])
-        if kimi_raises:
+        if summariser_raises:
             mocker.patch.object(
-                scanner.kimi, "summarise_note", side_effect=RuntimeError("kimi 400")
+                scanner.summariser,
+                "summarise_note",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("Pi API error"),
             )
         else:
-            mocker.patch.object(scanner.kimi, "summarise_note", return_value="ok summary")
+            mocker.patch.object(
+                scanner.summariser,
+                "summarise_note",
+                new_callable=AsyncMock,
+                return_value="ok summary",
+            )
         mocker.patch.object(scanner.telegram, "send_review_message", return_value=1)
         # Isolate from the real SQLite DB.
         mocker.patch.object(scanner.state, "clear_stale_pending", return_value=0)
@@ -123,7 +142,7 @@ class TestScanFailureAlert:
 
     def test_alert_fires_on_total_failure(self, mocker):
         scanner = WeeklyScanner(dry_run=False)
-        send_alert, record_run = self._wire(scanner, mocker, kimi_raises=True)
+        send_alert, record_run = self._wire(scanner, mocker, summariser_raises=True)
 
         import asyncio
         result = asyncio.run(scanner.run())
@@ -136,7 +155,7 @@ class TestScanFailureAlert:
 
     def test_no_alert_when_messages_sent(self, mocker):
         scanner = WeeklyScanner(dry_run=False)
-        send_alert, record_run = self._wire(scanner, mocker, kimi_raises=False)
+        send_alert, record_run = self._wire(scanner, mocker, summariser_raises=False)
 
         import asyncio
         result = asyncio.run(scanner.run())
@@ -149,10 +168,10 @@ class TestScanFailureAlert:
 
     def test_no_alert_in_dry_run(self, mocker):
         scanner = WeeklyScanner(dry_run=True)
-        send_alert, _ = self._wire(scanner, mocker, kimi_raises=True)
+        send_alert, _ = self._wire(scanner, mocker, summariser_raises=True)
 
         import asyncio
         asyncio.run(scanner.run())
 
-        # dry_run returns before Kimi is called, so errors stay 0 -> no alert.
+        # dry_run returns before the summariser is called, so errors stay 0 -> no alert.
         send_alert.assert_not_called()

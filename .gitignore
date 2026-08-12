@@ -7,6 +7,7 @@ __pycache__/
 *.sqlite
 *.log
 .venv/
+.runtime/
 venv/
 .idea/
 .vscode/

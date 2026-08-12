@@ -73,7 +73,7 @@ A broken scan and an empty week look identical from Telegram — no messages eit
 
 - **Scan-failure alert** — if a scan finds candidate notes but sends zero messages (every note errored), it posts a ⚠️ notice to the review chat pointing at the logs.
 - **Run history** — every scan's outcome (scanned / sent / errors / duration) is recorded in a local `scan_runs` table, queryable as a trend rather than by grepping logs.
-- **Self-diagnosing API errors** — upstream error responses from Kimi and Notion are logged in full, so the reason for a failure is right there in the logs.
+- **Self-diagnosing API errors** — error responses from Pi Web UI and Notion are logged with their diagnostic codes, so the reason for a failure is right there in the logs.
 - **Rotated logs** — the log file is capped and rotated so it stays searchable over time.
 
 See [`docs/OBSERVABILITY.md`](docs/OBSERVABILITY.md) for the full operational guide and a diagnostic playbook.
@@ -91,7 +91,7 @@ APScheduler weekly cron
   -> query Ultimate Brain Notes database in Notion (two passes)
        pass 1: project-linked notes  (oldest 13, sorted oldest-first)
        pass 2: orphan notes          (oldest 13, no Project relation)
-  -> summarise each note with Kimi
+  -> summarise each note with GPT-5.6 Luna via the Pi Web UI Internal API
   -> send Telegram review message with Keep / Archive buttons
 
 Telegram callback polling
@@ -103,7 +103,7 @@ Telegram callback polling
 ## Repository structure
 
 ```text
-clients/     Notion, Telegram, and Kimi API clients
+clients/     Notion, Telegram, and Pi Web UI summariser clients
 logic/       Weekly scanner and action handler
 tests/       Unit tests for scanner, state, clients, and logging
 systemd/     Example service file
@@ -129,6 +129,7 @@ Configure environment:
 ```bash
 cp .env.example .env
 # fill in your real values
+# ensure Pi Web UI is running and its openai-codex subscription is authenticated
 # for a local shell run: set -a; source .env; set +a
 ```
 
@@ -152,7 +153,7 @@ python3 -m pytest -q
 
 ## Notes for public users
 
-This project was built for a real self-hosted Ultimate Brain workflow. Some implementation details therefore assume that specific workspace model. That is intentional: this is a focused automation for people already using Ultimate Brain, not a generic Notion-cleanup product for every workspace shape.
+This project was built for a real self-hosted Ultimate Brain workflow. Some implementation details therefore assume that specific workspace model. The summarisation path also assumes a local Pi Web UI installation with the `openai-codex` subscription provider available. That is intentional: this is a focused automation for people already using Ultimate Brain, not a generic Notion-cleanup product for every workspace shape.
 
 ## License
 
