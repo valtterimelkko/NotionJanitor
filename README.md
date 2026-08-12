@@ -133,11 +133,23 @@ cp .env.example .env
 # for a local shell run: set -a; source .env; set +a
 ```
 
-Run once for testing:
+Run a safe test scan (no Telegram or Notion mutations):
 
 ```bash
-python3 main.py --dry-run --run-once
+set -a; source .env; set +a
+.venv/bin/python main.py --dry-run --run-once
 ```
+
+To initiate the complete weekly process immediately, use live mode. This sends
+real Telegram review messages and records pending reviews:
+
+```bash
+set -a; source .env; set +a
+timeout --foreground 900 .venv/bin/python main.py --run-once
+```
+
+The normal Monday schedule runs inside the long-lived systemd service; see the
+[maintainer runbook](docs/MAINTAINER-RUNBOOK.md) for verification commands.
 
 Run tests:
 

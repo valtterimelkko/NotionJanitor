@@ -37,6 +37,38 @@ logged by Notion Janitor.
 
 ---
 
+## Manual and scheduled execution
+
+To exercise the complete pipeline outside Monday, run a live one-shot scan from
+the project directory after exporting the same environment file used by
+systemd:
+
+```bash
+cd /root/notionjanitor
+set -a; source .env; set +a
+timeout --foreground 900 .venv/bin/python main.py --run-once
+```
+
+This sends real Telegram review messages, creates pending-review state, and
+records a non-dry scan run. Use `--dry-run` instead when checking connectivity
+without sending or mutating anything. A local invocation must source `.env`;
+the systemd service loads it through `EnvironmentFile=`.
+
+The normal weekly process is APScheduler inside `notion-janitor.service`.
+Confirm that the service is enabled and that its startup log reports the next
+Monday run:
+
+```bash
+systemctl is-enabled notion-janitor.service
+systemctl status notion-janitor.service pi-web-ui.service
+journalctl -u notion-janitor.service | grep -E "Scheduler active|Weekly scan complete"
+```
+
+The service unit orders startup after `pi-web-ui.service`; the schedule comes
+from `SCHEDULE_DAY`, `SCHEDULE_HOUR`, and `SCHEDULE_MINUTE` in `.env`.
+
+---
+
 ## The per-scan summary
 
 Every scan ends by logging one structured line — this is the fastest health read:

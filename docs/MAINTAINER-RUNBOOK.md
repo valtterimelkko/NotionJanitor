@@ -33,12 +33,28 @@ A single oldest-first query silently excludes orphan notes (quick captures never
 
 ## Typical local commands
 
-Run once in dry-run mode:
+Run once in dry-run mode (safe; it does not send Telegram messages or mutate
+Notion):
 
 ```bash
 cd /root/notionjanitor
-python3 main.py --dry-run --run-once
+set -a; source .env; set +a
+.venv/bin/python main.py --dry-run --run-once
 ```
+
+Run the weekly process immediately in live mode (sends real Telegram review
+messages and records each candidate as pending):
+
+```bash
+cd /root/notionjanitor
+set -a; source .env; set +a
+timeout --foreground 900 .venv/bin/python main.py --run-once
+```
+
+`--run-once` performs the complete scan and then exits; it does not start a
+second Telegram polling loop. Use the live command only when an immediate
+review batch is wanted. The `.env` export is required for local invocations;
+systemd loads the same file automatically.
 
 Run tests:
 
@@ -65,14 +81,33 @@ Full guide: [`OBSERVABILITY.md`](OBSERVABILITY.md). Quick reference for operator
 - **Failure alert:** a total failure (`sent == 0` and `errors > 0`) posts a ⚠️ message to the Telegram chat. This is what turns a silent outage into a loud one.
 - **API errors:** Pi Web UI/Notion failures are logged with their HTTP status and diagnostic code. Check `Pi Web UI Internal API` or `Notion API error` log entries.
 
-## Service shape
+## Scheduled service
 
-The original self-hosted deployment used the example unit in:
+The weekly schedule is APScheduler inside the long-lived systemd service, not a
+separate `notion-janitor.timer`. The schedule is configured by
+`SCHEDULE_DAY`, `SCHEDULE_HOUR`, and `SCHEDULE_MINUTE` in `.env` (the current
+host is `mon`, `09:00`, using `Etc/UTC`). The service starts after and wants
+`pi-web-ui.service`, so the Pi Internal API is available before scheduled work.
 
-- `systemd/notion-janitor.service` (ordered after `pi-web-ui.service`)
+Verify the installed schedule and service:
 
-That unit expects local secrets/config in:
+```bash
+systemctl is-enabled notion-janitor.service
+systemctl show notion-janitor.service -p ExecStart -p EnvironmentFiles -p After -p Wants
+systemctl status notion-janitor.service pi-web-ui.service
+journalctl -u notion-janitor.service -n 100 --no-pager
+```
 
-- `/root/notionjanitor/.env`
+The startup log records the configured next scan (for example,
+`Scheduler active — next scan: mon 09:00`). After changing `.env` or the unit,
+apply it with:
 
-and runs the app as a long-lived polling service.
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart notion-janitor.service
+```
+
+The unit is kept in `systemd/notion-janitor.service` and expects local
+secrets/config in `/root/notionjanitor/.env`. It runs the app as a long-lived
+Telegram-polling service; Telegram callback handling remains available after a
+manual `--run-once` batch.
