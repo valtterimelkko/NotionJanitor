@@ -103,16 +103,51 @@ Telegram callback polling
 ## Repository structure
 
 ```text
-clients/     Notion, Telegram, and Pi Web UI summariser clients
-logic/       Weekly scanner and action handler
-tests/       Unit tests for scanner, state, clients, and logging
-systemd/     Example service file
-config.py    Runtime configuration
-main.py      Scheduler + Telegram polling entrypoint
-state.py     Local SQLite state tracking + scan-run history
-docs/        Maintainer runbook and observability guide
-pyproject.toml   Lint config (ruff)
+clients/              Notion, Telegram, and Pi Web UI summariser clients
+logic/                Weekly scanner and action handler
+diagnose_orphans.py   One-liner orphan diagnostic (notion orphans vs project-linked)
+tests/                Unit tests for scanner, state, clients, and logging
+systemd/              Example service file
+config.py             Runtime configuration (see table below)
+main.py               Scheduler + Telegram polling entrypoint
+state.py              Local SQLite state tracking + scan-run history
+docs/                 Maintainer runbook and observability guide
+pyproject.toml        Lint config (ruff)
 ```
+
+```bash
+# Diagnose orphan coverage (how the two-pass scanner avoids the cap trap):
+set -a; source .env; set +a
+python3 diagnose_orphans.py
+```
+
+## Configuration (config.py env vars)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `NOTION_TOKEN` | *(required)* | Notion integration token (`ntn_…`) |
+| `NOTION_DATABASE_ID` | *(required)* | Ultimate Brain Notes database id |
+| `PI_INTERNAL_API_SOCKET_PATH` | `~/.pi-web-ui/internal-api.sock` | Pi Web UI Internal API Unix socket |
+| `PI_INTERNAL_API_TOKEN_PATH` | `~/.pi-web-ui/internal-api-token` | Bearer token file for the Internal API |
+| `PI_SUMMARISER_CWD` | `.runtime/summariser` | Private working dir for Pi sessions (0700, no symlink) |
+| `PI_INTERNAL_API_REQUEST_TIMEOUT_SECONDS` | `30` | Per-request timeout (seconds) |
+| `PI_INTERNAL_API_MAX_WAIT_SECONDS` | `300` | Max wait for a Pi run to finish |
+| `PI_INTERNAL_API_POLL_INTERVAL_SECONDS` | `1` | Poll interval for Pi runs / transcripts |
+| `TELEGRAM_BOT_TOKEN` | *(required)* | Telegram bot token |
+| `TELEGRAM_CHAT_ID` | `0` | Dedicated review chat id |
+| `CUTOFF_DAYS` | `60` | Notes older than this without edits become candidates |
+| `STALE_NOTE_LIMIT` | `13` | Per-type cap (linked *and* orphan) — total weekly cap is `26` |
+| `SCHEDULE_DAY` | `mon` | APScheduler day name for the weekly cron |
+| `SCHEDULE_HOUR` | `9` | Hour of the weekly scan (local `Etc/UTC`) |
+| `SCHEDULE_MINUTE` | `0` | Minute of the weekly scan |
+| `STATE_DB_PATH` | `data/janitor.db` | SQLite state DB (`pending_reviews`, `processed_notes`, `scan_runs`) |
+| `LOG_FILE` | `/var/log/notion-janitor.log` | Rotated file sink (5 MiB × 5 backups) — journald is primary |
+
+Stale-pending auto-expiry is **13 days** (`scanner.py` → `state.clear_stale_pending(days=13)`, default `13` in `state.py`) — chosen as the smallest clean weekly boundary that avoids scheduling/seconds race conditions.
+
+Summariser is pinned to **`openai-codex/gpt-5.6-luna`** at **`medium`** thinking; any other model/provider is a hard failure (closed). `PROVIDER_NOT_ALLOWED` / `MODEL_MISMATCH` / `THINKING_LEVEL_MISMATCH` are surfaced with their diagnostic codes in the logs, and the scan-failure alert fires if every note fails.
+
+> **Pi model pin:** `openai-codex/gpt-5.6-luna` + `medium` thinking is enforced in `clients/pi_summariser.py` (`PI_SUMMARISER_MODEL`/`PI_SUMMARISER_THINKING_LEVEL`) and validated at startup against the live `/api/v1/capabilities` + `/api/v1/models?runtime=pi` catalogue. If the required model or thinking level is unavailable (e.g. `PROVIDER_NOT_ALLOWED` from a policy block, or the model is not in the catalogue), startup hard-fails with `PiInternalApiError` — this is intentional closed behaviour, not a silent fallback. See `docs/OBSERVABILITY.md` § "Upstream API errors now self-diagnose" for how `PROVIDER_NOT_ALLOWED` is surfaced.
 
 ## Quick start
 

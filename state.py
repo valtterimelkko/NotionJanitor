@@ -119,7 +119,7 @@ class StateStore:
             rows = conn.execute("SELECT * FROM pending_reviews").fetchall()
             return [dict(r) for r in rows]
 
-    def clear_stale_pending(self, days: int = 14) -> int:
+    def clear_stale_pending(self, days: int = 13) -> int:
         """Remove pending reviews older than *days* (e.g. user never clicked)."""
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         with self._conn() as conn:

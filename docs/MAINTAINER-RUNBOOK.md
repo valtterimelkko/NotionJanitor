@@ -66,8 +66,9 @@ python3 -m pytest -q
 ## Local state
 
 The app keeps a small SQLite state DB locally to track:
-- pending review messages
+- pending review messages (auto-cleared after 13 days via `clear_stale_pending(days=13)`)
 - processed notes
+- `diagnose_orphans.py` — one-liner orphan diagnostic: `set -a; source .env; set +a; python3 diagnose_orphans.py`
 
 This prevents duplicate sends within the same review window and records whether a note was kept or archived.
 
