@@ -133,6 +133,7 @@ python3 diagnose_orphans.py
 | `PI_INTERNAL_API_REQUEST_TIMEOUT_SECONDS` | `30` | Per-request timeout (seconds) |
 | `PI_INTERNAL_API_MAX_WAIT_SECONDS` | `300` | Max wait for a Pi run to finish |
 | `PI_INTERNAL_API_POLL_INTERVAL_SECONDS` | `1` | Poll interval for Pi runs / transcripts |
+| `PI_SUMMARISER_MAX_CONTENT_CHARS` | `120000` | Max chars of note content sent to Pi for summarisation |
 | `TELEGRAM_BOT_TOKEN` | *(required)* | Telegram bot token |
 | `TELEGRAM_CHAT_ID` | `0` | Dedicated review chat id |
 | `CUTOFF_DAYS` | `60` | Notes older than this without edits become candidates |

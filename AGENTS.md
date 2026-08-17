@@ -1,4 +1,4 @@
-AGENTS.md and CLAUDE.md are byte-identical — same file for different harnesses. Edit AGENTS.md and copy to CLAUDE.md on every change.
+> AGENTS.md and CLAUDE.md are byte-identical — same file for different harnesses. Edit AGENTS.md and copy to CLAUDE.md on every change.
 
 # Agent Guide for Notion Janitor
 
