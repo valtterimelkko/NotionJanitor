@@ -253,7 +253,7 @@ class PiInternalApiSummariser:
         session_id: str | None = None
         primary_error: BaseException | None = None
         try:
-            session = await self._request(
+            session = await self._request_with_retry(
                 "POST",
                 "/api/v1/sessions",
                 {
@@ -262,6 +262,7 @@ class PiInternalApiSummariser:
                     "model": PI_SUMMARISER_MODEL,
                     "thinkingLevel": PI_SUMMARISER_THINKING_LEVEL,
                 },
+                description="session creation",
             )
             session_id = _required_string(session.get("sessionId"), "sessionId", "session creation")
             session_info = await self._request(
@@ -353,19 +354,27 @@ class PiInternalApiSummariser:
             "detach": True,
             "idempotencyKey": idempotency_key,
         }
+        return await self._request_with_retry(
+            "POST",
+            f"/api/v1/sessions/{session_id}/prompt",
+            body,
+            description="prompt dispatch",
+        )
+
+    async def _request_with_retry(
+        self, method: str, path: str, body: dict | None, *, description: str
+    ) -> dict:
+        """Retry transient failures (429/502/503/504, transport errors) a few times."""
         for attempt in range(self.max_retries + 1):
             try:
-                return await self._request(
-                    "POST",
-                    f"/api/v1/sessions/{session_id}/prompt",
-                    body,
-                )
+                return await self._request(method, path, body)
             except PiInternalApiError as exc:
                 if not exc.retryable or attempt >= self.max_retries:
                     raise
                 delay = exc.retry_after if exc.retry_after is not None else min(2**attempt, 5)
                 logger.warning(
-                    "Retrying Pi prompt dispatch after attempt %d/%d in %.1fs: %s",
+                    "Retrying Pi %s after attempt %d/%d in %.1fs: %s",
+                    description,
                     attempt + 1,
                     self.max_retries,
                     delay,

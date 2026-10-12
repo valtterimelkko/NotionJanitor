@@ -344,3 +344,111 @@ def test_working_directory_symlinks_are_rejected(tmp_path):
     summariser = PiInternalApiSummariser(cwd=link)
     with pytest.raises(PiInternalApiError, match="symlink"):
         summariser._ensure_secure_cwd()
+
+
+def _happy_path_handler(session_id, create_responses):
+    """Handler for a full successful run whose session creation replays create_responses."""
+    creates = iter(create_responses)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if request.method == "GET" and path == "/api/v1/capabilities":
+            return json_response(CAPABILITIES)
+        if request.method == "GET" and path == "/api/v1/models":
+            return json_response(MODELS)
+        if request.method == "GET" and path == "/api/v1/capacity":
+            return json_response(CAPACITY)
+        if request.method == "POST" and path == "/api/v1/sessions":
+            return next(creates)
+        if request.method == "GET" and path == f"/api/v1/sessions/{session_id}/info":
+            return json_response({"sessionId": session_id, "runtime": "pi", "model": PI_SUMMARISER_MODEL})
+        if request.method == "POST" and path == f"/api/v1/sessions/{session_id}/control":
+            return json_response({"success": True, "level": "low"})
+        if request.method == "POST" and path == f"/api/v1/sessions/{session_id}/prompt":
+            return json_response({"sessionId": session_id, "runId": "run-1", "detached": True, "status": "accepted"}, 202)
+        if request.method == "GET" and path == "/api/v1/runs/run-1":
+            return json_response({
+                "runId": "run-1",
+                "sessionId": session_id,
+                "status": "completed",
+                "model": PI_SUMMARISER_MODEL,
+                "outputEvidence": {"disposition": "text"},
+            })
+        if request.method == "GET" and path == f"/api/v1/sessions/{session_id}/transcript":
+            return json_response({"sessionId": session_id, "items": [{"kind": "assistant", "text": "Summary."}]})
+        if request.method == "DELETE" and path == f"/api/v1/sessions/{session_id}":
+            return json_response({"success": True})
+        raise AssertionError(f"Unexpected request: {request.method} {request.url}")
+
+    return handler
+
+
+OVERLOADED = {
+    "error": "Internal API admission refused: event_loop_lag",
+    "code": "ADMISSION_CAPACITY_EXHAUSTED",
+}
+
+
+def test_session_creation_is_retried_after_a_transient_admission_refusal():
+    sleeps = []
+
+    async def fake_sleep(delay):
+        sleeps.append(delay)
+
+    handler = _happy_path_handler(
+        "session-retry",
+        [json_response(OVERLOADED, 503), json_response({"sessionId": "session-retry"}, 201)],
+    )
+
+    async def scenario():
+        summariser = PiInternalApiSummariser(
+            http_client=make_client(handler),
+            poll_interval_seconds=0,
+            sleep=fake_sleep,
+        )
+        try:
+            return await summariser.summarise_note("Title", "Content")
+        finally:
+            await summariser.aclose()
+
+    assert asyncio.run(scenario()) == "Summary."
+    assert len(sleeps) == 1
+
+
+def test_session_creation_gives_up_after_max_retries():
+    async def fake_sleep(delay):
+        return None
+
+    handler = _happy_path_handler("unused", [json_response(OVERLOADED, 503)] * 3)
+
+    async def scenario():
+        summariser = PiInternalApiSummariser(
+            http_client=make_client(handler),
+            poll_interval_seconds=0,
+            max_retries=2,
+            sleep=fake_sleep,
+        )
+        try:
+            with pytest.raises(PiInternalApiError, match="ADMISSION_CAPACITY_EXHAUSTED"):
+                await summariser.summarise_note("Title", "Content")
+        finally:
+            await summariser.aclose()
+
+    asyncio.run(scenario())
+
+
+def test_session_creation_does_not_retry_a_permanent_error():
+    handler = _happy_path_handler(
+        "unused",
+        [json_response({"error": "bad model", "code": "MODEL_NOT_FOUND"}, 400)],
+    )
+
+    async def scenario():
+        summariser = PiInternalApiSummariser(http_client=make_client(handler), poll_interval_seconds=0)
+        try:
+            with pytest.raises(PiInternalApiError, match="MODEL_NOT_FOUND"):
+                await summariser.summarise_note("Title", "Content")
+        finally:
+            await summariser.aclose()
+
+    asyncio.run(scenario())

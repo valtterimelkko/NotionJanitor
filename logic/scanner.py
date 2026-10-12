@@ -116,8 +116,27 @@ class WeeklyScanner:
         # — the janitor simply goes silent.
         if not self.dry_run and sent_count == 0 and error_count > 0:
             await self._alert_scan_failure(len(all_notes), error_count)
+        elif not self.dry_run and error_count > 0:
+            await self._alert_partial_failure(len(all_notes), sent_count, error_count)
 
         return summary
+
+    async def _alert_partial_failure(self, total: int, sent: int, errors: int) -> None:
+        """Best-effort Telegram ping when some notes failed but others were sent.
+
+        Never raises, for the same reason as _alert_scan_failure.
+        """
+        text = (
+            "⚠️ <b>Notion Janitor — some notes failed</b>\n\n"
+            f"{errors} of {total} stale note(s) could not be processed; "
+            f"{sent} review message(s) were sent. The failed notes are not pending, "
+            "so the next scan will try them again. Check the service logs: "
+            "journalctl -u notion-janitor"
+        )
+        try:
+            await self.telegram.send_alert(text)
+        except Exception as exc:
+            logger.error("Failed to send partial-failure alert: %s", exc)
 
     async def _alert_scan_failure(self, total: int, errors: int) -> None:
         """Best-effort Telegram ping when a scan sends nothing despite candidates.

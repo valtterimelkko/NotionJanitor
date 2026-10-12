@@ -175,3 +175,28 @@ class TestScanFailureAlert:
 
         # dry_run returns before the summariser is called, so errors stay 0 -> no alert.
         send_alert.assert_not_called()
+
+    def test_alert_fires_on_partial_failure(self, mocker):
+        scanner = WeeklyScanner(dry_run=False)
+        send_alert, record_run = self._wire(scanner, mocker)
+        mocker.patch.object(
+            scanner.notion,
+            "get_stale_notes",
+            side_effect=[[self._fake_note("n1", "Note 1"), self._fake_note("n2", "Note 2")], []],
+        )
+        mocker.patch.object(
+            scanner.summariser,
+            "summarise_note",
+            new_callable=AsyncMock,
+            side_effect=["ok summary", RuntimeError("Pi API error")],
+        )
+
+        import asyncio
+        result = asyncio.run(scanner.run())
+
+        assert result["sent"] == 1
+        assert result["errors"] == 1
+        send_alert.assert_called_once()
+        text = send_alert.call_args.args[0]
+        assert "1 of 2" in text
+        record_run.assert_called_once()

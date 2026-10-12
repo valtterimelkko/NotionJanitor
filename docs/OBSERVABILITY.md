@@ -145,6 +145,12 @@ sends a no-button admin message to the same Telegram chat:
 This is the feature that makes a silent outage loud. It is best-effort: a failure
 to send the alert is logged and never raised, so it cannot break the scan.
 
+A second, milder alert fires when **`sent > 0` and `errors > 0`** ("some notes
+failed": N of M could not be processed). The failed notes are not pending, so the
+next scan retries them. Transient Pi Web UI refusals (HTTP 429/502/503/504, e.g.
+`ADMISSION_CAPACITY_EXHAUSTED`) are retried inside the summariser for both session
+creation and prompt dispatch (`max_retries`, default 2, honouring `Retry-After`).
+
 ---
 
 ## Upstream API errors now self-diagnose
