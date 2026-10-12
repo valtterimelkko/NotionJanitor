@@ -181,7 +181,7 @@ failure alert still fires when every candidate fails.
 5. **Is Pi Web UI ready?** Check `systemctl status pi-web-ui` and confirm the
    owner-only socket/token paths configured by `PI_INTERNAL_API_SOCKET_PATH` and
    `PI_INTERNAL_API_TOKEN_PATH` exist. The required model is
-   `openai-codex/gpt-5.6-luna` with `medium` thinking; the summariser fails closed
+   `zai/glm-5.3-flash` with `low` thinking; the summariser fails closed
    rather than selecting another provider.
 
 ---

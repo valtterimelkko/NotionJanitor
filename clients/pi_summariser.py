@@ -22,10 +22,10 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-PI_SUMMARISER_PROVIDER = "openai-codex"
-PI_SUMMARISER_MODEL = "openai-codex/gpt-5.6-luna"
-PI_SUMMARISER_MODEL_ID = "gpt-5.6-luna"
-PI_SUMMARISER_THINKING_LEVEL = "medium"
+PI_SUMMARISER_PROVIDER = "zai"
+PI_SUMMARISER_MODEL = "zai/glm-5.3-flash"
+PI_SUMMARISER_MODEL_ID = "glm-5.3-flash"
+PI_SUMMARISER_THINKING_LEVEL = "low"
 MINIMUM_CONTRACT_MAJOR = "v1"
 
 
@@ -49,7 +49,7 @@ class PiInternalApiError(RuntimeError):
 
 
 class PiInternalApiSummariser:
-    """Summarise notes with a fresh Codex-backed Pi session per note."""
+    """Summarise notes with a fresh zai GLM-backed Pi session per note."""
 
     def __init__(
         self,
@@ -287,7 +287,7 @@ class PiInternalApiSummariser:
             )
             if thinking_response.get("level") != PI_SUMMARISER_THINKING_LEVEL:
                 raise PiInternalApiError(
-                    "Pi Web UI did not confirm the required medium thinking level",
+                    "Pi Web UI did not confirm the required thinking level",
                     code="THINKING_LEVEL_MISMATCH",
                 )
 

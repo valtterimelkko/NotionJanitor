@@ -91,7 +91,7 @@ APScheduler weekly cron
   -> query Ultimate Brain Notes database in Notion (two passes)
        pass 1: project-linked notes  (oldest 13, sorted oldest-first)
        pass 2: orphan notes          (oldest 13, no Project relation)
-  -> summarise each note with GPT-5.6 Luna via the Pi Web UI Internal API
+  -> summarise each note with GLM-5.3 Flash (zai) via the Pi Web UI Internal API
   -> send Telegram review message with Keep / Archive buttons
 
 Telegram callback polling
@@ -146,9 +146,9 @@ python3 diagnose_orphans.py
 
 Stale-pending auto-expiry is **13 days** (`scanner.py` → `state.clear_stale_pending(days=13)`, default `13` in `state.py`) — chosen as the smallest clean weekly boundary that avoids scheduling/seconds race conditions.
 
-Summariser is pinned to **`openai-codex/gpt-5.6-luna`** at **`medium`** thinking; any other model/provider is a hard failure (closed). `PROVIDER_NOT_ALLOWED` / `MODEL_MISMATCH` / `THINKING_LEVEL_MISMATCH` are surfaced with their diagnostic codes in the logs, and the scan-failure alert fires if every note fails.
+Summariser is pinned to **`zai/glm-5.3-flash`** at **`low`** thinking; any other model/provider is a hard failure (closed). `PROVIDER_NOT_ALLOWED` / `MODEL_MISMATCH` / `THINKING_LEVEL_MISMATCH` are surfaced with their diagnostic codes in the logs, and the scan-failure alert fires if every note fails.
 
-> **Pi model pin:** `openai-codex/gpt-5.6-luna` + `medium` thinking is enforced in `clients/pi_summariser.py` (`PI_SUMMARISER_MODEL`/`PI_SUMMARISER_THINKING_LEVEL`) and validated at startup against the live `/api/v1/capabilities` + `/api/v1/models?runtime=pi` catalogue. If the required model or thinking level is unavailable (e.g. `PROVIDER_NOT_ALLOWED` from a policy block, or the model is not in the catalogue), startup hard-fails with `PiInternalApiError` — this is intentional closed behaviour, not a silent fallback. See `docs/OBSERVABILITY.md` § "Upstream API errors now self-diagnose" for how `PROVIDER_NOT_ALLOWED` is surfaced.
+> **Pi model pin:** `zai/glm-5.3-flash` + `low` thinking is enforced in `clients/pi_summariser.py` (`PI_SUMMARISER_MODEL`/`PI_SUMMARISER_THINKING_LEVEL`) and validated at startup against the live `/api/v1/capabilities` + `/api/v1/models?runtime=pi` catalogue. If the required model or thinking level is unavailable (e.g. `PROVIDER_NOT_ALLOWED` from a policy block, or the model is not in the catalogue), startup hard-fails with `PiInternalApiError` — this is intentional closed behaviour, not a silent fallback. See `docs/OBSERVABILITY.md` § "Upstream API errors now self-diagnose" for how `PROVIDER_NOT_ALLOWED` is surfaced.
 
 ## Quick start
 
@@ -165,7 +165,7 @@ Configure environment:
 ```bash
 cp .env.example .env
 # fill in your real values
-# ensure Pi Web UI is running and its openai-codex subscription is authenticated
+# ensure Pi Web UI is running and its zai provider key is configured
 # for a local shell run: set -a; source .env; set +a
 ```
 
@@ -201,7 +201,7 @@ python3 -m pytest -q
 
 ## Notes for public users
 
-This project was built for a real self-hosted Ultimate Brain workflow. Some implementation details therefore assume that specific workspace model. The summarisation path also assumes a local Pi Web UI installation with the `openai-codex` subscription provider available. That is intentional: this is a focused automation for people already using Ultimate Brain, not a generic Notion-cleanup product for every workspace shape.
+This project was built for a real self-hosted Ultimate Brain workflow. Some implementation details therefore assume that specific workspace model. The summarisation path also assumes a local Pi Web UI installation with the `zai` provider available. That is intentional: this is a focused automation for people already using Ultimate Brain, not a generic Notion-cleanup product for every workspace shape.
 
 ## License
 

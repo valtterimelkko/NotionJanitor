@@ -35,9 +35,9 @@ MODELS = {
     "models": {
         "pi": [
             {
-                "id": "gpt-5.6-luna",
-                "provider": "openai-codex",
-                "thinkingLevels": ["off", "minimal", "low", "medium", "high", "xhigh", "max"],
+                "id": "glm-5.3-flash",
+                "provider": "zai",
+                "thinkingLevels": ["low", "high", "max"],
             }
         ]
     }
@@ -57,7 +57,7 @@ def make_client(handler):
     )
 
 
-def test_summarise_uses_codex_luna_medium_and_cleans_up_session():
+def test_summarise_uses_zai_glm_flash_low_and_cleans_up_session():
     calls = []
     transcript_calls = 0
 
@@ -88,8 +88,8 @@ def test_summarise_uses_codex_luna_medium_and_cleans_up_session():
                 "thinkingLevel": PI_SUMMARISER_THINKING_LEVEL,
             })
         if request.method == "POST" and request.url.path == "/api/v1/sessions/session-1/control":
-            assert body == {"action": "set_thinking_level", "level": "medium"}
-            return json_response({"success": True, "action": "set_thinking_level", "level": "medium"})
+            assert body == {"action": "set_thinking_level", "level": "low"}
+            return json_response({"success": True, "action": "set_thinking_level", "level": "low"})
         if request.method == "POST" and request.url.path == "/api/v1/sessions/session-1/prompt":
             assert body["verbosity"] == "answers"
             assert body["detach"] is True
@@ -169,7 +169,7 @@ def test_startup_validation_rejects_a_model_with_a_mismatched_provider():
     async def scenario():
         summariser = PiInternalApiSummariser(http_client=make_client(handler), poll_interval_seconds=0)
         try:
-            with pytest.raises(PiInternalApiError, match="openai-codex/gpt-5.6-luna"):
+            with pytest.raises(PiInternalApiError, match="zai/glm-5.3-flash"):
                 await summariser.ensure_ready()
         finally:
             await summariser.aclose()
@@ -177,12 +177,12 @@ def test_startup_validation_rejects_a_model_with_a_mismatched_provider():
     asyncio.run(scenario())
 
 
-def test_startup_validation_rejects_a_non_codex_model():
+def test_startup_validation_rejects_a_non_zai_model():
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/api/v1/capabilities":
             return json_response(CAPABILITIES)
         if request.url.path == "/api/v1/models":
-            return json_response({"models": {"pi": [{"id": "gpt-5.6-luna", "provider": "openai"}]}})
+            return json_response({"models": {"pi": [{"id": "glm-5.3-flash", "provider": "openai"}]}})
         if request.url.path == "/api/v1/capacity":
             return json_response(CAPACITY)
         raise AssertionError(f"Unexpected request: {request.method} {request.url}")
@@ -190,7 +190,7 @@ def test_startup_validation_rejects_a_non_codex_model():
     async def scenario():
         summariser = PiInternalApiSummariser(http_client=make_client(handler), poll_interval_seconds=0)
         try:
-            with pytest.raises(PiInternalApiError, match="openai-codex/gpt-5.6-luna"):
+            with pytest.raises(PiInternalApiError, match="zai/glm-5.3-flash"):
                 await summariser.ensure_ready()
         finally:
             await summariser.aclose()
@@ -264,7 +264,7 @@ def test_failed_run_still_deletes_the_ephemeral_session():
         if request.method == "GET" and request.url.path == "/api/v1/sessions/session-failed/info":
             return json_response({"sessionId": "session-failed", "runtime": "pi", "model": PI_SUMMARISER_MODEL})
         if request.method == "POST" and request.url.path == "/api/v1/sessions/session-failed/control":
-            return json_response({"success": True, "action": "set_thinking_level", "level": "medium"})
+            return json_response({"success": True, "action": "set_thinking_level", "level": "low"})
         if request.method == "POST" and request.url.path == "/api/v1/sessions/session-failed/prompt":
             return json_response(
                 {"sessionId": "session-failed", "runId": "run-failed", "detached": True, "status": "accepted"},
@@ -303,7 +303,7 @@ def test_cleanup_failure_is_reported_after_a_successful_summary():
         if request.method == "GET" and request.url.path == "/api/v1/sessions/session-cleanup/info":
             return json_response({"sessionId": "session-cleanup", "runtime": "pi", "model": PI_SUMMARISER_MODEL})
         if request.method == "POST" and request.url.path == "/api/v1/sessions/session-cleanup/control":
-            return json_response({"success": True, "level": "medium"})
+            return json_response({"success": True, "level": "low"})
         if request.method == "POST" and request.url.path == "/api/v1/sessions/session-cleanup/prompt":
             return json_response({"sessionId": "session-cleanup", "runId": "run-cleanup", "detached": True, "status": "accepted"}, 202)
         if request.method == "GET" and request.url.path == "/api/v1/runs/run-cleanup":
