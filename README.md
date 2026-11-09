@@ -127,6 +127,7 @@ python3 diagnose_orphans.py
 |----------|---------|-------------|
 | `NOTION_TOKEN` | *(required)* | Notion integration token (`ntn_…`) |
 | `NOTION_DATABASE_ID` | *(required)* | Ultimate Brain Notes database id |
+| `NOTION_RETRY_BUDGET_SECONDS` | `120` | Max seconds of transient-failure retries per Notion API call |
 | `PI_INTERNAL_API_SOCKET_PATH` | `~/.pi-web-ui/internal-api.sock` | Pi Web UI Internal API Unix socket |
 | `PI_INTERNAL_API_TOKEN_PATH` | `~/.pi-web-ui/internal-api-token` | Bearer token file for the Internal API |
 | `PI_SUMMARISER_CWD` | `.runtime/summariser` | Private working dir for Pi sessions (0700, no symlink) |

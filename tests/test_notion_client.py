@@ -45,7 +45,7 @@ class TestNotionErrorLogging:
 
 
 class TestTransientRetries:
-    """Transient upstream failures must be retried, not dropped silently."""
+    """Transient upstream failures are retried inside a bounded time budget."""
 
     @staticmethod
     def _response(mocker, status_code, *, json_data=None, headers=None):
@@ -64,8 +64,20 @@ class TestTransientRetries:
         )
         return resp
 
+    @staticmethod
+    def _client(mocker, *, budget=100.0, max_attempts=10):
+        """Client whose clock only advances when the code sleeps."""
+        clock = [0.0]
+        client = NotionClient(
+            retry_budget_seconds=budget,
+            max_attempts=max_attempts,
+            sleep=lambda s: clock.__setitem__(0, clock[0] + s),
+            monotonic=lambda: clock[0],
+        )
+        return client, clock
+
     def test_block_children_retries_502_then_succeeds(self, mocker):
-        client = NotionClient(sleep=lambda _s: None)
+        client, _clock = self._client(mocker)
         bad = self._response(mocker, 502)
         good = self._response(mocker, 200, json_data={"results": [], "has_more": False})
         req = mocker.patch.object(client.session, "request", side_effect=[bad, good])
@@ -73,18 +85,20 @@ class TestTransientRetries:
         assert client.get_block_children("page-1") == []
         assert req.call_count == 2
 
-    def test_retries_exhausted_then_raises(self, mocker):
-        client = NotionClient(sleep=lambda _s: None)
+    def test_retries_until_budget_exhausted_then_raises(self, mocker):
+        client, clock = self._client(mocker, budget=100.0)
         bad = self._response(mocker, 503)
         req = mocker.patch.object(client.session, "request", return_value=bad)
 
         with pytest.raises(requests.exceptions.HTTPError):
             client.get_block_children("page-1")
-        # max_retries=2 → 1 initial attempt + 2 retries
-        assert req.call_count == 3
+        # Backoff sleeps 1+2+4+8+16+30+30 = 91s; the next 30s delay does not
+        # fit the ~9s remaining, so the loop gives up — bounded, never endless.
+        assert req.call_count == 8
+        assert clock[0] == 91.0
 
     def test_non_transient_status_is_not_retried(self, mocker):
-        client = NotionClient(sleep=lambda _s: None)
+        client, _clock = self._client(mocker)
         bad = self._response(mocker, 400)
         req = mocker.patch.object(client.session, "request", return_value=bad)
 
@@ -93,7 +107,7 @@ class TestTransientRetries:
         assert req.call_count == 1
 
     def test_transport_error_is_retried(self, mocker):
-        client = NotionClient(sleep=lambda _s: None)
+        client, _clock = self._client(mocker)
         good = self._response(mocker, 200, json_data={"results": [], "has_more": False})
         req = mocker.patch.object(
             client.session,
@@ -105,18 +119,35 @@ class TestTransientRetries:
         assert req.call_count == 2
 
     def test_retry_after_header_sets_delay(self, mocker):
-        client = NotionClient(max_retries=1)
-        sleeps = []
-        client._sleep = sleeps.append
+        client, clock = self._client(mocker, budget=100.0)
         limited = self._response(mocker, 429, headers={"Retry-After": "7"})
         good = self._response(mocker, 200, json_data={"results": [], "has_more": False})
         mocker.patch.object(client.session, "request", side_effect=[limited, good])
 
         assert client.get_block_children("page-1") == []
-        assert sleeps == [7.0]
+        assert clock[0] == 7.0
+
+    def test_retry_after_beyond_budget_gives_up_without_sleeping(self, mocker):
+        client, clock = self._client(mocker, budget=100.0)
+        limited = self._response(mocker, 429, headers={"Retry-After": "500"})
+        req = mocker.patch.object(client.session, "request", return_value=limited)
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            client.get_block_children("page-1")
+        assert req.call_count == 1
+        assert clock[0] == 0.0
+
+    def test_max_attempts_caps_retries(self, mocker):
+        client, _clock = self._client(mocker, budget=10000.0, max_attempts=3)
+        bad = self._response(mocker, 502)
+        req = mocker.patch.object(client.session, "request", return_value=bad)
+
+        with pytest.raises(requests.exceptions.HTTPError):
+            client.get_block_children("page-1")
+        assert req.call_count == 3
 
     def test_stale_notes_query_retries_transient_post(self, mocker):
-        client = NotionClient(sleep=lambda _s: None)
+        client, _clock = self._client(mocker)
         bad = self._response(mocker, 502)
         good = self._response(mocker, 200, json_data={"results": [{"id": "n1"}]})
         req = mocker.patch.object(client.session, "request", side_effect=[bad, good])

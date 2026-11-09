@@ -27,6 +27,9 @@ def _path_env(name: str, default: str) -> Path:
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN", "")
 NOTION_DATABASE_ID = os.environ.get("NOTION_DATABASE_ID", "")
 NOTION_API_BASE = "https://api.notion.com/v1"
+# Seconds a single Notion API call may spend retrying transient failures
+# (429/5xx, connection/timeout errors). Bounded — never an endless loop.
+NOTION_RETRY_BUDGET_SECONDS = _float_env("NOTION_RETRY_BUDGET_SECONDS", 120.0)
 
 # Pi Web UI Internal API summarisation
 # The model and thinking level are deliberately fixed in the client and checked
