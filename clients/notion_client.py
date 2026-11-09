@@ -1,6 +1,7 @@
 """Notion API client for Ultimate Brain (Second Brain) operations."""
 
 import logging
+import time
 
 import requests
 
@@ -14,13 +15,74 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 
+# Statuses worth retrying: rate limiting and transient gateway/server errors.
+# Notion intermittently answers with 502/503 HTML error pages; without a retry
+# a single blip drops a note from the weekly batch.
+TRANSIENT_STATUS_CODES = frozenset({429, 500, 502, 503, 504})
+
+# Transport-level failures that are safe to retry.
+TRANSIENT_REQUEST_ERRORS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
+
+
+def _retry_after_seconds(resp) -> float | None:
+    """Parse a Retry-After header (delta-seconds form) into seconds."""
+    raw = resp.headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None
+
 
 class NotionClient:
     """Wraps the Notion API to match the behaviour of the n8n Notion nodes."""
 
-    def __init__(self):
+    def __init__(self, max_retries: int = 2, sleep=time.sleep):
         self.session = requests.Session()
         self.session.headers.update(HEADERS)
+        self.max_retries = max(0, max_retries)
+        self._sleep = sleep
+
+    def _request(self, method: str, url: str, *, context: str, **kwargs) -> requests.Response:
+        """Issue an API call, retrying transient failures with exponential backoff.
+
+        Every Notion call goes through here so a transient upstream error can
+        never silently drop a note (or abort the whole scan) the way a bare
+        session.get/post could.
+        """
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = self.session.request(method, url, **kwargs)
+            except TRANSIENT_REQUEST_ERRORS as exc:
+                if attempt >= self.max_retries:
+                    raise
+                delay = min(2**attempt, 5)
+                logger.warning(
+                    "Retrying Notion %s (%s) after transport error on attempt %d/%d "
+                    "in %.1fs: %s",
+                    context, method, attempt + 1, self.max_retries, delay, exc,
+                )
+                self._sleep(delay)
+                continue
+
+            if resp.status_code in TRANSIENT_STATUS_CODES and attempt < self.max_retries:
+                delay = _retry_after_seconds(resp) or min(2**attempt, 5)
+                logger.warning(
+                    "Retrying Notion %s (%s) after HTTP %s on attempt %d/%d in %.1fs",
+                    context, method, resp.status_code, attempt + 1,
+                    self.max_retries, delay,
+                )
+                self._sleep(delay)
+                continue
+
+            self._check(resp, context)
+            return resp
+        raise AssertionError("unreachable")
 
     @staticmethod
     def _check(resp, context: str) -> None:
@@ -76,8 +138,7 @@ class NotionClient:
             "sorts": [{"timestamp": "last_edited_time", "direction": "ascending"}],
             "page_size": limit,
         }
-        resp = self.session.post(url, json=payload)
-        self._check(resp, "get_stale_notes")
+        resp = self._request("POST", url, context="get_stale_notes", json=payload)
         results = resp.json().get("results", [])
         logger.info(
             "Found %d stale notes (limit %d, orphans_only=%s)",
@@ -91,8 +152,7 @@ class NotionClient:
     def get_page(self, page_id: str) -> dict:
         """Fetch a single page (used to resolve project relation)."""
         url = f"{NOTION_API_BASE}/pages/{page_id}"
-        resp = self.session.get(url)
-        self._check(resp, "get_page")
+        resp = self._request("GET", url, context="get_page")
         return resp.json()
 
     def get_project_name(self, note: dict) -> str:
@@ -124,8 +184,7 @@ class NotionClient:
         url = f"{NOTION_API_BASE}/blocks/{block_id}/children"
         has_more = True
         while has_more:
-            resp = self.session.get(url)
-            self._check(resp, "get_block_children")
+            resp = self._request("GET", url, context="get_block_children")
             data = resp.json()
             for block in data.get("results", []):
                 blocks.append(block)
@@ -164,8 +223,7 @@ class NotionClient:
                 "Archived": {"checkbox": True},
             }
         }
-        resp = self.session.patch(url, json=payload)
-        self._check(resp, "archive_note")
+        self._request("PATCH", url, context="archive_note", json=payload)
         logger.info("Archived note %s", page_id)
 
     def append_kept_block(self, page_id: str) -> None:
@@ -196,6 +254,5 @@ class NotionClient:
                 }
             ]
         }
-        resp = self.session.patch(url, json=payload)
-        self._check(resp, "append_kept_block")
+        self._request("PATCH", url, context="append_kept_block", json=payload)
         logger.info("Appended 'kept' block to note %s", page_id)
